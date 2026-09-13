@@ -1,0 +1,187 @@
+PROMPTS.txt
+Exact prompts used to guide the AI assistant through the Week 3 refactor.
+==========================================================================
+
+PHASE 1 - LOCKING THE BEHAVIOR (Golden Rule: "No tests. No refactoring.")
+----------------------------------------------------------------------------
+Before any structural change, per the lecture's Golden Rule, a characterization
+test suite was generated and run against the ORIGINAL, unmodified legacy script.
+
+Prompt A (generate the test suite, following the R-I-C-E framework):
+"Role: You are a senior test engineer writing characterization tests for
+legacy code. Instruction: Write a pytest suite for
+legacy_enrollment_processor.py that locks in its current behavior exactly
+as-is -- including any behavior that looks like a bug. Context: This
+script reads students.csv, evaluates prerequisite and credit-limit rules,
+writes results to SQLite, and generates report.html. Do not modify the
+script. Output: A tests/ directory with characterization tests that run
+the script as a subprocess against a fixed CSV and assert on the exact
+resulting database rows (student_id, course_code, status, reason) and
+report.html summary counts."
+
+Prompt B (provide the legacy function, per the "Provide Legacy Function" step):
+"Here is the full text of legacy_enrollment_processor.py. Base every
+assertion in the test suite strictly on what this code actually does, not
+on what you think it should do."
+
+Prompt C (add edge & boundary tests):
+"Add boundary tests for get_credit_limit() at GPA values just below,
+exactly at, and just above the 3.5 honors threshold. Add a test that
+confirms a row with a missing student_id is silently skipped -- do not
+'fix' that, just confirm and lock it as current behavior. Add a test for
+the override-flag parsing covering 'yes', 'YES', 'true', 'TRUE', '1',
+'no', and blank."
+
+Prompt D (run tests on the original code -- must pass before Phase 2):
+"Run this test suite against the original, unmodified
+legacy_enrollment_processor.py. All tests must pass. If any test fails,
+the test is wrong, not the legacy code -- fix the test's assumption and
+re-run until 100% pass."
+
+Result: tests/test_legacy_characterization.py, tests/test_csv_reader.py
+(run against the extracted-shape logic once available), and
+tests/golden_results.py (the recorded expected outcomes) were produced
+this way, and all passed against the original script before Step 1 below
+began. This golden data is reused unchanged in Phase 2 to verify the
+refactor.
+
+
+STEP 1 - THE AI CARTOGRAPHER (mapping the mess)
+------------------------------------------------
+Prompt 1:
+"Act as a Senior Systems Architect. I'm attaching legacy_enrollment_processor.py,
+a 300+ line script I've just inherited. Without changing any code, generate a
+document named ARCHITECTURE.md that:
+1. Explains the step-by-step execution flow of the script from main() down.
+2. Explicitly identifies at least three code smells present in the file
+   (name each one, e.g. God Object, Shotgun Surgery, Fragility/Immobility,
+   global mutable state, etc.) with a concrete example of where in the file
+   each smell occurs.
+Do not suggest a refactor yet -- just document what exists today."
+
+Prompt 2 (follow-up, used to sanity-check the map before touching code):
+"Before we refactor: confirm which functions in this file mutate module-level
+global state, and list every place that reads or writes running_credit_totals
+or email_log. I want to make sure we account for all of it before we extract
+anything."
+
+
+STEP 2 - THE CLEAN ARCHITECTURE BLUEPRINT
+------------------------------------------
+Prompt 3:
+"Now propose a new directory and file structure -- do not write the
+implementation yet. Split the monolith into three layers:
+- domain/: business rules only (credit limits, prerequisite checks, course
+  catalog, and any request/decision data structures). No SQL, no file I/O,
+  no HTML.
+- infrastructure/: CSV reading, SQLite database access, and the simulated
+  email notifications. No business rules.
+- presentation/: HTML report generation only.
+List the exact files you'd create in each folder and, for each file, one
+sentence describing its single responsibility. Also tell me what main.py's
+job will be once the layers exist."
+
+Prompt 4 (follow-up, to lock the dependency direction before coding):
+"Confirm the dependency rule: infrastructure and presentation are allowed to
+import from domain, but domain must never import from infrastructure or
+presentation. Flag anything in your proposed structure that would violate
+that rule."
+
+
+STEP 3 - THE AI SCALPEL (extracting one responsibility at a time)
+-------------------------------------------------------------------
+Prompt 5 (domain models first, since everything else depends on them):
+"Extract the data shapes implied by read_requests(), process_enrollment(),
+and generate_html_report() into domain/models.py as plain dataclasses:
+EnrollmentRequest, Course, and EnrollmentDecision. No behavior yet, just the
+data. They must not import sqlite3, csv, or anything from infrastructure."
+
+Prompt 6 (course catalog):
+"Extract the COURSE_CATALOG dictionary into domain/catalog.py as a
+CourseCatalog class with a get(course_code) method that returns a Course
+from domain/models.py, or None if it doesn't exist. Keep the same course
+codes, credits, and prerequisites as the original."
+
+Prompt 7 (business rules):
+"Extract check_prerequisites(), get_credit_limit(), and the credit-limit
+logic currently inline inside process_enrollment() into
+domain/enrollment_rules.py. Replace the module-level running_credit_totals
+global with an explicit CreditLedger class that has total_for(student_id)
+and add(student_id, credits) methods. Wrap all of this in an
+EnrollmentPolicy class with a single evaluate(request) -> EnrollmentDecision
+method that contains zero database or file I/O. It must produce exactly the
+same status strings and reason messages as the original
+('Missing prerequisites: ...', 'Prerequisite override applied for: ...',
+'Credit limit exceeded (X > Y)', 'Enrolled successfully',
+'Course does not exist: ...')."
+
+Prompt 8 (database logic):
+"Extract this database logic into a new file called
+infrastructure/db_manager.py. It should contain a class called
+EnrollmentDatabase that handles connecting, creating the enrollments table,
+and inserting a result row, completely agnostic to the HTML generation or
+business logic. Support use as a context manager (__enter__/__exit__) so
+main.py can use a `with` block instead of manually calling close()."
+
+Prompt 9 (CSV reading):
+"Extract read_requests() into infrastructure/csv_reader.py as an
+EnrollmentCsvReader class with a read(path) method. Keep every piece of the
+existing cleanup logic (header normalization, string trimming, GPA parsing
+with the same fallback to 0.0, pipe-splitting completed_courses, and the
+same override-flag string matching), but have it return a list of
+domain.models.EnrollmentRequest objects instead of dicts."
+
+Prompt 10 (email/notifications):
+"Extract _queue_email() into infrastructure/email_service.py as an
+EmailNotifier class with a notify(request, decision) method and a `log`
+property that exposes the notifications sent so far. Keep the exact same
+subject and body format and the same '[EMAIL SIMULATED]' print statement."
+
+Prompt 11 (HTML report):
+"Extract generate_html_report() into presentation/report_generator.py as an
+HtmlReportGenerator class with a generate(results, path) method. Keep the
+HTML structure, inline CSS, and row markup byte-for-byte identical except
+for the timestamp. It must not know about prerequisites, credit limits, or
+the database -- only the list of result rows it's given."
+
+
+STEP 4 - THE ORCHESTRATOR
+---------------------------
+Prompt 12:
+"Write main.py as the orchestrator. It should:
+1. Delete the old database file if present.
+2. Construct EnrollmentCsvReader, CourseCatalog, CreditLedger,
+   EnrollmentPolicy, EnrollmentDatabase, EmailNotifier, and
+   HtmlReportGenerator, wiring them together explicitly (no hidden globals).
+3. Read all requests, evaluate each one, record it to the database, notify
+   by email, and collect a results list.
+4. Generate the HTML report from the results list.
+5. Print the same three summary lines the legacy script printed
+   ('Processed N enrollment requests.', 'Report written to ...',
+   'N emails simulated.').
+main.py itself must not contain any prerequisite checks, credit-limit math,
+SQL, or HTML."
+
+Prompt 13 (verification, run after main.py was written):
+"Run the original legacy_enrollment_processor.py and the new main.py against
+the same students.csv. Diff the resulting enrollment.db contents (ignoring
+the processed_at timestamp) and diff report.html (ignoring the Generated
+timestamp line). They must match exactly -- if they don't, tell me which
+row or line differs and why, don't just say 'close enough.'"
+
+Prompt 14 (run the locked test suite against the refactor -- the actual
+Golden Rule check, not just a manual diff):
+"Point the same characterization test suite from Phase 1 at
+refactored/main.py instead of the legacy script, reusing the exact same
+golden_results.py expectations. Every test must pass without modifying a
+single expected value -- if a test needs its expected value changed to
+pass, that means the refactor changed behavior, which is a failure, not a
+test bug. Also add direct unit tests against the new domain layer
+(EnrollmentPolicy, CreditLedger, CourseCatalog) now that it's isolated
+enough to test without a database."
+
+Result: tests/test_refactored_characterization.py (same golden data as
+Phase 1, run against refactored/main.py) and tests/test_domain_rules.py
+(new unit tests only possible because the business rules are no longer
+welded to sqlite3). Full suite: 35 passed, 0 failed, 0 modified
+expectations.

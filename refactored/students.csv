@@ -1,0 +1,22 @@
+ Student_ID , Name,EMAIL,GPA,Completed_Courses ,course_code, override_prereq
+S001,Alice Johnson,alice.johnson@example.com,3.8,CS101|MATH110,CS201,
+S001,Alice Johnson,alice.johnson@example.com,3.8,CS101|MATH110,MATH210,
+S001,Alice Johnson,alice.johnson@example.com,3.8,CS101|MATH110,PHYS150,
+S001,Alice Johnson,alice.johnson@example.com,3.8,CS101|MATH110,PHYS250,
+S002,Bob Smith,bob.smith@example.com,2.9,CS101,cs301,yes
+S002,Bob Smith,bob.smith@example.com,2.9,CS101,ENG100,
+S002,Bob Smith,bob.smith@example.com,2.9,CS101,HIST101,
+S002,Bob Smith,bob.smith@example.com,2.9,CS101,ART120,
+S002,Bob Smith,bob.smith@example.com,2.9,CS101,MATH110,
+S003,Carla Diaz,carla.diaz@example.com,3.2, ,cs201,no
+S004,,dan@example.com,3.0,ENG100,ENG100,
+S005,Evan Wright,evan.wright@example.com,3.9,MATH110|PHYS150,PHYS250,
+,Ghost Student,ghost@example.com,3.0,,CS101,
+S006,Fiona Lee,fiona.lee@example.com,2.5,,BIO500,
+S007,George King,george.king@example.com,3.6,CS101|CS201,CS301,
+S008,Hana Kim,hana.kim@example.com,3.1,,MATH110,
+S008,Hana Kim,hana.kim@example.com,3.1,,PHYS150,yes
+S008,Hana Kim,hana.kim@example.com,3.1,,HIST101,
+S008,Hana Kim,hana.kim@example.com,3.1,,ENG100,
+S008,Hana Kim,hana.kim@example.com,3.1,,ART120,
+S008,Hana Kim,hana.kim@example.com,3.1,,CS101,
