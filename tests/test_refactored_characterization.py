@@ -41,6 +41,7 @@ def run_refactored(tmp_path: Path) -> Path:
         text=True,
         timeout=30,
         env=env,
+        stdin=subprocess.DEVNULL,
     )
     assert result.returncode == 0, "Refactored main.py crashed:\n" + result.stderr
     return work_dir
@@ -89,6 +90,8 @@ def test_refactored_prints_summary_counts(tmp_path):
         text=True,
         timeout=30,
         env=env,
+        stdin=subprocess.DEVNULL,
+
     )
     assert "Processed {} enrollment requests.".format(len(EXPECTED_RESULTS)) in result.stdout
     assert "{} emails simulated.".format(len(EXPECTED_RESULTS)) in result.stdout
